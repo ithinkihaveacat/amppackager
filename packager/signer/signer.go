@@ -139,7 +139,7 @@ func noRedirects(req *http.Request, via []*http.Request) error {
 
 func New(cert *x509.Certificate, key crypto.PrivateKey, docroot string, urlSets []util.URLSet,
 	rtvCache *rtv.RTVCache, shouldPackage func() bool, overrideBaseURL *url.URL,
-	requireHeaders bool) (*Signer, error) {
+	requireHeaders bool, forwardedRequestHeaders []string) (*Signer, error) {
 	var t http.RoundTripper
 	if docroot != "" {
 		t := &http.Transport{}

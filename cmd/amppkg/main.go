@@ -31,6 +31,7 @@ import (
 	"github.com/WICG/webpackage/go/signedexchange"
 
 	"github.com/ampproject/amppackager/packager/certcache"
+	"github.com/ampproject/amppackager/packager/mux"
 	"github.com/ampproject/amppackager/packager/rtv"
 	"github.com/ampproject/amppackager/packager/signer"
 	"github.com/ampproject/amppackager/packager/util"
@@ -55,24 +56,6 @@ func (this logIntercept) ServeHTTP(resp http.ResponseWriter, req *http.Request) 
 	this.handler.ServeHTTP(resp, req)
 	// TODO(twifkak): Get status code from resp. This requires making a ResponseWriter wrapper.
 	// TODO(twifkak): Separate the typical weblog from the detailed error log.
-}
-
-func allowProject(id string, h http.Handler) http.Handler {
-	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-		// X-Appengine-Inbound-Appid can be trusted on GAE:
-		// https://cloud.google.com/appengine/docs/standard/go/appidentity/#asserting_identity_to_other_app_engine_apps
-		if req.Header.Get("X-Appengine-Inbound-Appid") == id {
-			log.Printf("Allowing GET from [%s]", req.Header.Get("X-Appengine-Inbound-Appid"))
-			h.ServeHTTP(resp, req)
-		} else {
-			log.Printf(
-				"Denying GET from [%s], expected X-Appengine-Inbound-Appid header to be [%s]\n",
-				req.Header.Get("X-Appengine-Inbound-Appid"),
-				id,
-			)
-			http.Error(resp, "403 Forbidden", http.StatusForbidden)
-		}
-	})
 }
 
 // Exposes an HTTP server. Don't run this on the open internet, for at least two reasons:
@@ -166,16 +149,11 @@ func main() {
 		addr = "localhost"
 	}
 	addr += fmt.Sprint(":", config.Port)
-	handler := http.Handler(logIntercept{mux})
-	if config.ProjectId != "" {
-		handler = allowProject(config.ProjectId, handler)
-	}
 	server := http.Server{
 		Addr: addr,
 		// Don't use DefaultServeMux, per
 		// https://blog.cloudflare.com/exposing-go-on-the-internet/.
-		// TODO Respond to /_ah/healthcheck with a 200 (consider certCache.IsHealthy, too)
-		Handler:           handler,
+		Handler:           logIntercept{mux.New(certCache, signer, validityMap)},
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		// If needing to stream the response, disable WriteTimeout and

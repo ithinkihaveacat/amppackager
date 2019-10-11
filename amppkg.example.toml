@@ -62,9 +62,6 @@ OCSPCache = '/tmp/amppkg-ocsp'
 # valid AMPs to package (instead of fetching AMPs from the network).
 # Docroot = "/www"
 
-# If a ProjectId is specified, amppkg will verify that all incoming HTTP
-# requests have an X-Appengine-Inbound-Appid header equal to this value.
-# ProjectId = "ampbyexample"
 # The list of request header names to be forwarded in a fetch request.
 # Hop-by-hop headers, conditional request headers and Via cannot be included.
 ForwardedRequestHeaders = []
