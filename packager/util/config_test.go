@@ -44,10 +44,87 @@ func TestMinimalValidConfig(t *testing.T) {
 			Sign: &URLPattern{
 				Domain:  "example.com",
 				PathRE:  stringPtr(".*"),
-				QueryRE: stringPtr(".*"),
+				QueryRE: stringPtr(""),
+				MaxLength: 2000,
 			},
 		}},
 	}, *config)
+}
+
+func TestForwardedRequestHeader(t *testing.T) {
+	config, err := ReadConfig([]byte(`
+		CertFile = "cert.pem"
+		KeyFile = "key.pem"
+		OCSPCache = "/tmp/ocsp"
+		ForwardedRequestHeaders = ["X-Foo", "X-Bar"]
+		[[URLSet]]
+		  [URLSet.Sign]
+		    Domain = "example.com"
+	`))
+	require.NoError(t, err)
+	assert.Equal(t, Config{
+		Port:      8080,
+		CertFile:  "cert.pem",
+		KeyFile:   "key.pem",
+		OCSPCache: "/tmp/ocsp",
+		ForwardedRequestHeaders: []string{"X-Foo", "X-Bar"},
+		URLSet: []URLSet{{
+			Sign: &URLPattern{
+				Domain:  "example.com",
+				PathRE:  stringPtr(".*"),
+				QueryRE: stringPtr(""),
+				MaxLength: 2000,
+			},
+		}},
+	}, *config)
+}
+
+func TestForwardedRequestHeadersHaveHopByHopHeader(t *testing.T) {
+	assert.Contains(t, errorFrom(ReadConfig([]byte(`
+		CertFile = "cert.pem"
+		KeyFile = "key.pem"
+		OCSPCache = "/tmp/ocsp"
+		ForwardedRequestHeaders = ["X-Foo", "X-Bar", "connection"]
+		[[URLSet]]
+		  [URLSet.Sign]
+		    Domain = "example.com"
+	`))), "ForwardedRequestHeaders must not have hop-by-hop header of connection")
+}
+
+func TestForwardedRequestHeadersHaveConditionalRequestHeader(t *testing.T) {
+	assert.Contains(t, errorFrom(ReadConfig([]byte(`
+		CertFile = "cert.pem"
+		KeyFile = "key.pem"
+		OCSPCache = "/tmp/ocsp"
+		ForwardedRequestHeaders = ["X-Foo", "X-Bar", "if-match"]
+		[[URLSet]]
+		  [URLSet.Sign]
+		    Domain = "example.com"
+	`))), "ForwardedRequestHeaders must not have conditional request header of if-match")
+}
+
+func TestForwardedRequestHeadersHaveDisallowedHeader(t *testing.T) {
+	assert.Contains(t, errorFrom(ReadConfig([]byte(`
+		CertFile = "cert.pem"
+		KeyFile = "key.pem"
+		OCSPCache = "/tmp/ocsp"
+		ForwardedRequestHeaders = ["X-Foo", "X-Bar", "via"]
+		[[URLSet]]
+		  [URLSet.Sign]
+		    Domain = "example.com"
+	`))), "ForwardedRequestHeaders must not include request header of via")
+}
+
+func TestForwardedRequestHeadersHaveTE(t *testing.T) {
+	assert.Contains(t, errorFrom(ReadConfig([]byte(`
+		CertFile = "cert.pem"
+		KeyFile = "key.pem"
+		OCSPCache = "/tmp/ocsp"
+		ForwardedRequestHeaders = ["X-Foo", "X-Bar", "TE"]
+		[[URLSet]]
+		  [URLSet.Sign]
+		    Domain = "example.com"
+	`))), "ForwardedRequestHeaders must not include request header of TE")
 }
 
 func TestOCSPDirDoesntExist(t *testing.T) {
@@ -156,6 +233,7 @@ func TestSignOverrides(t *testing.T) {
 		    PathExcludeRE = ["/amp/signin", "/amp/settings(/.*)?"]
 		    QueryRE = ""
 		    ErrorOnStatefulHeaders = true
+		    MaxLength = 8000
 	`))
 	require.NoError(t, err)
 	require.Equal(t, 1, len(config.URLSet))
@@ -166,6 +244,7 @@ func TestSignOverrides(t *testing.T) {
 		PathExcludeRE:          []string{"/amp/signin", "/amp/settings(/.*)?"},
 		QueryRE:                stringPtr(""),
 		ErrorOnStatefulHeaders: true,
+		MaxLength:              8000,
 	}, *config.URLSet[0].Sign)
 }
 
@@ -188,8 +267,9 @@ func TestFetchDefaults(t *testing.T) {
 	assert.Equal(t, "example.com", fetch.Domain)
 	assert.Equal(t, stringPtr(".*"), fetch.PathRE)
 	assert.Nil(t, fetch.PathExcludeRE)
-	assert.Equal(t, stringPtr(".*"), fetch.QueryRE)
+	assert.Equal(t, stringPtr(""), fetch.QueryRE)
 	assert.Equal(t, false, fetch.ErrorOnStatefulHeaders)
+	assert.Equal(t, 2000, fetch.MaxLength)
 	assert.Equal(t, boolPtr(true), fetch.SamePath)
 }
 
@@ -207,6 +287,7 @@ func TestFetchOverrides(t *testing.T) {
 		    PathRE = "/amp/.*"
 		    PathExcludeRE = ["/amp/signin", "/amp/settings(/.*)?"]
 		    QueryRE = ""
+		    MaxLength = 8000
 		    SamePath = false
 	`))
 	require.NoError(t, err)
@@ -217,6 +298,7 @@ func TestFetchOverrides(t *testing.T) {
 		PathRE:        stringPtr("/amp/.*"),
 		PathExcludeRE: []string{"/amp/signin", "/amp/settings(/.*)?"},
 		QueryRE:       stringPtr(""),
+		MaxLength:     8000,
 		SamePath:      boolPtr(false),
 	}, *config.URLSet[0].Fetch)
 }

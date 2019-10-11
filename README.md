@@ -1,19 +1,15 @@
 # AMP Packager
 
-> **WARNING**: This code is still evolving, and is a developer preview. The
-> specification is still changing, and this is an implementation of a snapshot
-> of it. Feel free to use it, but treat with care how you configure and deploy it.
-
-AMP Packager is a tool to [improve AMP
-URLs](https://amphtml.wordpress.com/2018/01/09/improving-urls-for-amp-pages/).
-By running it in a proper configuration, web publishers may (eventually) have
-origin URLs appear in AMP search results.
+AMP Packager is a tool to [improve AMP URLs](https://blog.amp.dev/2018/11/13/developer-preview-of-better-amp-urls-in-google-search/)
+by [serving AMP using Signed Exchanges](https://amp.dev/documentation/guides-and-tutorials/optimize-and-measure/signed-exchange/).
+By running it in a proper configuration, web publishers enable origin URLs to
+appear in AMP search results.
 
 The AMP Packager works by creating [Signed HTTP
 Exchanges (SXGs)](https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html)
 containing AMP documents, signed with a certificate associated with the origin,
-with a maximum lifetime of 7 days. In the future, the [Google AMP
-Cache](https://www.ampproject.org/docs/fundamentals/how_cached) will fetch,
+with a maximum lifetime of 7 days. The [Google AMP
+Cache](https://amp.dev/documentation/guides-and-tutorials/learn/amp-caches-and-cors/how_amp_pages_are_cached/) will fetch,
 cache, and serve them, similar to what it does for normal AMP HTML documents.
 When a user loads such an SXG, Chrome validates the signature and then displays
 the certificate's domain in the URL bar instead of `google.com`, and treats the
@@ -21,6 +17,8 @@ web page as though it were on that domain.
 
 The packager is an HTTP server that sits behind a frontend server; it fetches
 and signs AMP documents as requested by the AMP Cache.
+
+As an alternative to running the packager, you can sign up for one of the SXG [service providers](https://github.com/ampproject/amppackager/wiki/Service-Providers).
 
 ## Packager/Signer
 
@@ -42,7 +40,6 @@ own and can obtain certificates for.
   3. Create a file `amppkg.toml`. A minimal config looks like this:
      ```
      LocalOnly = true
-     PackagerBase = 'https://localhost:8080/'
      CertFile = 'path/to/fullchain.pem'
      KeyFile = 'path/to/privkey.pem'
      OCSPCache = '/tmp/amppkg-ocsp'
@@ -64,10 +61,7 @@ container.
 
 #### Test your config
 
-  1. Run Chrome M70 or later (as of 2018-09-18, this is
-     [Beta](https://www.google.com/chrome/beta/) or
-     [Dev](https://www.google.com/chrome/dev/)). On the
-     command-line, pass the following flags:
+  1. Run Chrome with the following commandline flags:
      ```
      --user-data-dir=/tmp/udd
      --ignore-certificate-errors-spki-list=$(openssl x509 -pubkey -noout -in path/to/fullchain.pem | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64)
@@ -78,7 +72,8 @@ container.
   3. Click the `click me` link.
   4. Watch the URL transmogrify! Verify it came from an SXG by switching
      DevTools to the Network tab and looking in the `Size` column for `(from
-     signed-exchange)` and in the `Type` column for `signed-exchange`.
+     signed-exchange)` and in the `Type` column for `signed-exchange`. Click on
+     that row and then click on the Preview tab, to see if there are any errors.
 
 #### Demonstrate privacy-preserving prefetch
 
@@ -91,7 +86,7 @@ works with SXGs.
   3. Stop `amppkg` with Ctrl-C.
   4. `go get -u github.com/ampproject/amppackager/cmd/amppkg_test_cache`.
   5. `amppkg_test_cache`
-  6. Open Chrome and DevTools.
+  6. Open Chrome and DevTools, as above.
   7. Visit `https://localhost:8000/`. Observe the prefetch of `/test.sxg`.
   8. Click the link. Observe that the cached SXG is used.
 
@@ -109,6 +104,10 @@ For now, productionizing is a bit manual. The minimum steps are:
      2. If the URL points to an AMP page and the `AMP-Cache-Transform` request
         header is present, rewrite the URL by prepending `/priv/doc` and forward
         the request.
+
+        NOTE: If using nginx, prefer using `proxy_pass` with `$request_uri`,
+        rather than using `rewrite`, as in [this PR](https://github.com/Warashi/try-amppackager/pull/3),
+        to avoid percent-encoding issues.
      3. If at all possible, don't send URLs of non-AMP pages to `amppkg`; its
         [transforms](transformer/) may break non-AMP HTML.
      4. DO NOT forward `/priv/doc` requests; these URLs are meant to be
@@ -121,13 +120,28 @@ For now, productionizing is a bit manual. The minimum steps are:
   5. Get an SXG cert from your CA. It must use an EC key with the prime256v1
      algorithm, and it must have a [CanSignHttpExchanges
      extension](https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#cross-origin-cert-req).
+     One provider of SXG certs is [DigiCert](https://www.digicert.com/account/ietf/http-signed-exchange.php).
      You MUST use this in `amppkg.toml`, and MUST NOT use it in your frontend.
+  6. Every 90 days or sooner, renew your SXG cert (per
+     [WICG/webpackage#383](https://github.com/WICG/webpackage/pull/383)) and
+     restart amppkg (per
+     [#93](https://github.com/ampproject/amppackager/issues/93)).
+  7. Keep amppkg updated from `releases` (the default branch, so `go get` works)
+     about every ~2 months. The [wg-caching](https://github.com/ampproject/wg-caching)
+     team will release a new version approximately this often. Soon after each
+     release, Googlebot will increment the version it requests with
+     `AMP-Cache-Transform`. Googlebot will only allow the latest 2-3 versions
+     (details are still TBD), so an update is necessary but not immediately.
+
+     To keep subscribed to releases, you can select "Releases only" from the
+     "Watch" dropdown in GitHub, or use [various tools](https://stackoverflow.com/questions/9845655/how-do-i-get-notifications-for-commits-to-a-repository)
+     to subscribe to the `releases` branch.
 
 You may also want to:
 
   1. Launch `amppkg` as a restricted user.
   2. Save its stdout to a rotated log somewhere.
-  3. Use the [provided tools](https://www.ampproject.org/docs/fundamentals/validate)
+  3. Use the [provided tools](https://amp.dev/documentation/guides-and-tutorials/learn/validation-workflow/validate_amp/)
      to verify that your published AMP documents are valid, for instance just
      before publication, or with a regular audit of a sample of documents. The
      [transforms](transformer/) are designed to work on valid AMP pages, and
@@ -140,6 +154,36 @@ packager URL directly, first add a Chrome extension to send an
 `AMP-Cache-Transform: any` request header. Otherwise, follow the above
 "Demonstrate privacy-preserving prefetch" instructions.
 
+##### Security Considerations
+
+Signed exchanges come with some [security
+considerations](https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#security-considerations)
+that publishers should consider. A starting list of recommendations based on
+that:
+
+ * Use different keys for the signed exchange cert and the TLS cert.
+ * Only sign public content that's OK to be shared with crawlers.
+ * Don't sign personalized content. (It's OK to sign content that includes
+   static JS that adds personalization at runtime.)
+ * Be careful when signing inline JS; if it includes a vulnerability, it may be
+   possible for attackers to exploit it without intercepting the network path,
+   for up to 7 days.
+
+#### Testing productionization without a valid certificate
+
+It is possible to test an otherwise fully production configuration without
+obtaining a certificate with the `CanSignHttpExchanges` extension. `amppkg`
+still needs to perform OCSP verification, so the Issuer CA must be valid (i.e. no
+self-signed certificates). e.g. You can use a certificate from [Let's Encrypt](https://letsencrypt.org/).
+
+Running `amppkg` with the `-invalidcert` flag will skip the check for
+`CanSignHttpExchanges`. This flag is not necessary when using the
+`-development` flag.
+
+Chrome can be configured to allow these invalid certificates with the
+*Allow Signed HTTP Exchange certificates without extension* experiment:
+chrome://flags/#allow-sxg-certs-without-extension
+
 #### Redundancy
 
 If you need to load balance across multiple instances of `amppkg`, you'll want
@@ -151,12 +195,10 @@ recommendations](https://gist.github.com/sleevi/5efe9ef98961ecfb4da8).
 
 #### How will these web packages be discovered by Google?
 
-For now, the presence of the `Vary: AMP-Cache-Transform` response header on an
-AMP HTML page will allow the Google AMP Cache to make a second request with
-`AMP-Cache-Transform: google` for the SXG.
-
-In the future, Googlebot may make all requests with `AMP-Cache-Transform: google`,
-eliminating the double fetch.
+Googlebot makes requests with an `AMP-Cache-Transform` header. Responses that
+are [acceptable AMP SXGs](docs/cache_requirements.md) will be eligible for
+display to SXG-supporting browsers, and the HTML payload will be extracted and
+eligible for use in the AMP viewer in other browsers.
 
 ### Limitations
 
@@ -173,6 +215,13 @@ packages by 24h, which means they effectively last only 6 days for most users.
 This tool only packages AMP documents. To sign non-AMP documents, look at the
 commandline tools on which this was based, at
 https://github.com/WICG/webpackage/tree/master/go/signedexchange.
+
+`<amp-install-serviceworker>` will fail inside of a signed exchange, due to a
+[Chrome limitation](https://bugs.chromium.org/p/chromium/issues/detail?id=939237). The
+recommendation is to ignore the console error, for now. This is because
+amp-install-serviceworker will still succeed in the unsigned AMP viewer case,
+and crawlers may reuse the contents of the signed exchange when displaying an
+AMP viewer to browser versions that don't support SXG.
 
 ## Local Transformer
 

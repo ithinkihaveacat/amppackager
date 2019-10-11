@@ -52,8 +52,10 @@ CertFile = './pems/cert.pem'
 KeyFile = './pems/privkey.pem'
 
 # The path to a file where the OCSP response will be cached. The parent
-# directory should exist, but the file need not. If this is a network-mounted
-# file, it should support shared/exclusive locking.
+# directory should exist, but the file need not. A dedicated lock file will be
+# created in the same directory as this file, sharing the same name but with
+# extension .lock appended. The filesystem must support shared and exclusive
+# locking; consider this especially when utilizing network-mounted storage.
 OCSPCache = '/tmp/amppkg-ocsp'
 
 # If a Docroot directory is specified, amppkg will look in this directory for
@@ -63,6 +65,9 @@ OCSPCache = '/tmp/amppkg-ocsp'
 # If a ProjectId is specified, amppkg will verify that all incoming HTTP
 # requests have an X-Appengine-Inbound-Appid header equal to this value.
 # ProjectId = "ampbyexample"
+# The list of request header names to be forwarded in a fetch request.
+# Hop-by-hop headers, conditional request headers and Via cannot be included.
+ForwardedRequestHeaders = []
 
 # This is a simple level of validation, to guard against accidental
 # misconfiguration of the reverse proxy that sits in front of the packager.
@@ -92,8 +97,10 @@ OCSPCache = '/tmp/amppkg-ocsp'
     # certificate must cover this domain.
     Domain = "amppackageexample.com"
 
-    # A full-match regexp on the path (not including the ?query).
-    # Defaults to ".*". The below example allows paths starting with /world/.
+    # A full-match regexp on the path (not including the ?query). Defaults to
+    # ".*".
+    #
+    # The below example allows paths starting with /world/.
     # PathRE = "/world/.*"
 
     # A list of full-match regexps, carving out exclusions to the above PathRE.
@@ -109,9 +116,9 @@ OCSPCache = '/tmp/amppkg-ocsp'
     # PathExcludeRE = []
 
     # A full-match regexp on the query portion of the URL, excluding the initial
-    # "?". Defaults to ".*". The below example disallows non-empty query strings
-    # (though a single "?" is allowed).
-    # QueryRE = ""
+    # "?". Defaults to "" (though a single "?" is allowed). The below example
+    # allows non-empty query strings.
+    # QueryRE = ".*"
 
     # The fragment portion of the URL (i.e. the '#' and everything after) must
     # be empty. There is no way to configure this.
@@ -120,6 +127,16 @@ OCSPCache = '/tmp/amppkg-ocsp'
     # are stripped from the response before packaging. If instead you wish for
     # this to cause packaging to fail, set ErrorOnStatefulHeaders = true.
     # ErrorOnStatefulHeaders = true
+
+    # The maximum length of the URL. Defaults to 2000 as this is a de facto
+    # limit anyway in many browsers. The limit is to mitigate the risk of a
+    # content-sniffing attack (per https://github.com/WICG/webpackage/pull/348)
+    # against downstream servers that serve 200 responses regardless of some of
+    # the path components (e.g. looking up by id and not validating the slug in
+    # the requested URL). If your server only serves 200 responses on a limited
+    # set of valid URLs, and some of those URLs are >2000 chars, then it's safe
+    # to modify this default.
+    # MaxLength = 2000
 
   # By default, the packager only looks at the sign param, and fetches the
   # content from the same location. If you'd like more flexibility (for

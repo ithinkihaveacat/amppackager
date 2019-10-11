@@ -26,31 +26,33 @@ func TestProcess(t *testing.T) {
 		config      rpb.Request_TransformersConfig
 		expectedLen int
 	}{
-		{rpb.Request_DEFAULT, 6},
+		{rpb.Request_DEFAULT, 12},
 		{rpb.Request_NONE, 0},
 		{rpb.Request_VALIDATION, 1},
 		{rpb.Request_CUSTOM, 0},
 	}
 
 	for _, tc := range tests {
-		r := rpb.Request{Html: "<html ⚡><lemur>", Config: tc.config}
-		html, metadata, err := Process(&r)
-		if err != nil {
-			t.Fatalf("Process(%v) unexpectedly failed %v", tc.config, err)
-		}
+		t.Run(tc.config.String(), func(t *testing.T) {
+			r := rpb.Request{Html: "<html ⚡><lemur>", Config: tc.config}
+			html, metadata, err := Process(&r)
+			if err != nil {
+				t.Fatalf("unexpected failure %v", err)
+			}
 
-		expectedHTML := "<html ⚡><head></head><body><lemur></lemur></body></html>"
-		if html != expectedHTML {
-			t.Errorf("Process(%v) = %q, want = %q", tc.config, html, expectedHTML)
-		}
+			expectedHTML := "<html ⚡><head></head><body><lemur></lemur></body></html>"
+			if html != expectedHTML {
+				t.Errorf("got = %q, want = %q", html, expectedHTML)
+			}
 
-		if metadata == nil {
-			t.Errorf("Process(%v) metadata unexpectedly nil", tc.config)
-		}
+			if metadata == nil {
+				t.Error("metadata unexpectedly nil")
+			}
 
-		if len(fns) != tc.expectedLen {
-			t.Errorf("Process(%v) number of transformers, got=%d, want=%d", tc.config, len(fns), tc.expectedLen)
-		}
+			if len(fns) != tc.expectedLen {
+				t.Errorf("number of transformers, got=%d, want=%d", len(fns), tc.expectedLen)
+			}
+		})
 	}
 }
 
@@ -66,7 +68,7 @@ func TestPreloads(t *testing.T) {
 		}
 	}
 
-	tests := []struct {
+	tcs := []struct {
 		html             string
 		expectedPreloads []*rpb.Metadata_Preload
 	}{
@@ -86,6 +88,10 @@ func TestPreloads(t *testing.T) {
 			"<html ⚡><link rel=stylesheet href=foo>",
 			[]*rpb.Metadata_Preload{{Url: "foo", As: "style"}},
 		},
+		{ // case-insensitive
+			"<html ⚡><link rel=STYLEsheet href=foo>",
+			[]*rpb.Metadata_Preload{{Url: "foo", As: "style"}},
+		},
 		{
 			"<html ⚡><link rel=stylesheet href=foo><script src=bar>",
 			[]*rpb.Metadata_Preload{{Url: "foo", As: "style"}, {Url: "bar", As: "script"}},
@@ -96,15 +102,17 @@ func TestPreloads(t *testing.T) {
 		},
 	}
 
-	for _, test := range tests {
-		_, metadata, err := Process(&rpb.Request{Html: test.html, Config: rpb.Request_NONE})
-		if err != nil {
-			t.Fatalf("Process(%q) unexpectedly failed: %v", test.html, err)
-		}
+	for _, tc := range tcs {
+		t.Run(tc.html, func(t *testing.T) {
+			_, metadata, err := Process(&rpb.Request{Html: tc.html, Config: rpb.Request_NONE})
+			if err != nil {
+				t.Fatalf("unexpected failure: %v", err)
+			}
 
-		if diff := cmp.Diff(test.expectedPreloads, metadata.Preloads); diff != "" {
-			t.Errorf("Process(%q) preloads differ (-want +got):\n%s", test.html, diff)
-		}
+			if diff := cmp.Diff(tc.expectedPreloads, metadata.Preloads); diff != "" {
+				t.Errorf("preloads differ (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -146,26 +154,28 @@ func TestCustom(t *testing.T) {
 	}
 
 	// Case insensitive
-	tests := []string{
+	tcs := []string{
 		"aMpBoIlerplate",
 		"AMPRuntimeCSS",
 		"linktag",
-		"metaTag",
 		"NODECLEANUP",
 		"reorderHead",
 		"serverSideRendering",
 		"transformedIdentifier",
-		"uRl",
+		"aBsolUTEuRl",
+		"urlRewriTE",
 	}
-	for _, tc := range tests {
-		r := rpb.Request{Html: "<html ⚡><lemur>", Config: rpb.Request_CUSTOM, Transformers: []string{tc}}
-		if _, _, err := Process(&r); err != nil {
-			t.Fatalf("Process(%v) unexpectedly failed %v", tc, err)
-		}
+	for _, tc := range tcs {
+		t.Run(tc, func(t *testing.T) {
+			r := rpb.Request{Html: "<html ⚡><lemur>", Config: rpb.Request_CUSTOM, Transformers: []string{tc}}
+			if _, _, err := Process(&r); err != nil {
+				t.Fatalf("unexpected failure %v", err)
+			}
 
-		if len(fns) != 1 {
-			t.Errorf("Process(%v) expected successful transformer lookup", tc)
-		}
+			if len(fns) != 1 {
+				t.Error("expected successful transformer lookup")
+			}
+		})
 	}
 }
 
@@ -195,8 +205,27 @@ func TestError(t *testing.T) {
 	}
 }
 
+func TestInvalidUTF8(t *testing.T) {
+	tcs := []struct{ html, expectedError string }{
+		{"<html ⚡><le\003mur>", "character U+0003 at position 13 is not allowed in AMPHTML"},
+		{"<html ⚡><le\xc0mur>", "invalid UTF-8 at byte position 13"},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.html, func(t *testing.T) {
+			r := rpb.Request{Html: tc.html, Config: rpb.Request_DEFAULT}
+			_, _, err := Process(&r)
+			if err == nil {
+				t.Fatal("unexpected success")
+			}
+			if err.Error() != tc.expectedError {
+				t.Fatalf("mismatched error. got=%s, want=%s", err.Error(), tc.expectedError)
+			}
+		})
+	}
+}
+
 func TestRequireAMPAttribute(t *testing.T) {
-	tests := []struct {
+	tcs := []struct {
 		desc                     string
 		html                     string
 		expectedError            bool
@@ -265,29 +294,77 @@ func TestRequireAMPAttribute(t *testing.T) {
 			true, true, true, true,
 		},
 	}
-	for _, test := range tests {
-		r := rpb.Request{Html: test.html, Config: rpb.Request_NONE}
-		_, _, err := Process(&r)
-		if (err != nil) != test.expectedError {
-			t.Errorf("%s: Process() has error=%#v want=%t", test.desc, err, test.expectedError)
-		}
+	for _, tc := range tcs {
+		t.Run(tc.desc, func(t *testing.T) {
+			r := rpb.Request{Html: tc.html, Config: rpb.Request_NONE}
+			_, _, err := Process(&r)
+			if (err != nil) != tc.expectedError {
+				t.Errorf("Process() has error=%#v want=%t", err, tc.expectedError)
+			}
 
-		r = rpb.Request{Html: test.html, Config: rpb.Request_NONE, AllowedFormats: []rpb.Request_HtmlFormat{rpb.Request_AMP}}
-		_, _, err = Process(&r)
-		if (err != nil) != test.expectedErrorInAMP {
-			t.Errorf("%s: Process(AMP) has error=%#v want=%t", test.desc, err, test.expectedErrorInAMP)
-		}
+			r = rpb.Request{Html: tc.html, Config: rpb.Request_NONE, AllowedFormats: []rpb.Request_HtmlFormat{rpb.Request_AMP}}
+			_, _, err = Process(&r)
+			if (err != nil) != tc.expectedErrorInAMP {
+				t.Errorf("Process(AMP) has error=%#v want=%t", err, tc.expectedErrorInAMP)
+			}
 
-		r = rpb.Request{Html: test.html, Config: rpb.Request_NONE, AllowedFormats: []rpb.Request_HtmlFormat{rpb.Request_AMP4ADS}}
-		_, _, err = Process(&r)
-		if (err != nil) != test.expectedErrorInAMP4Ads {
-			t.Errorf("%s: Process(AMP4Ads) has error=%#v want=%t", test.desc, err, test.expectedErrorInAMP4Ads)
-		}
+			r = rpb.Request{Html: tc.html, Config: rpb.Request_NONE, AllowedFormats: []rpb.Request_HtmlFormat{rpb.Request_AMP4ADS}}
+			_, _, err = Process(&r)
+			if (err != nil) != tc.expectedErrorInAMP4Ads {
+				t.Errorf("Process(AMP4Ads) has error=%#v want=%t", err, tc.expectedErrorInAMP4Ads)
+			}
 
-		r = rpb.Request{Html: test.html, Config: rpb.Request_NONE, AllowedFormats: []rpb.Request_HtmlFormat{rpb.Request_AMP4EMAIL}}
-		_, _, err = Process(&r)
-		if (err != nil) != test.expectedErrorInAMP4Email {
-			t.Errorf("%s: Process(AMP4Email) has error=%#v want=%t", test.desc, err, test.expectedErrorInAMP4Email)
-		}
+			r = rpb.Request{Html: tc.html, Config: rpb.Request_NONE, AllowedFormats: []rpb.Request_HtmlFormat{rpb.Request_AMP4EMAIL}}
+			_, _, err = Process(&r)
+			if (err != nil) != tc.expectedErrorInAMP4Email {
+				t.Errorf("Process(AMP4Email) has error=%#v want=%t", err, tc.expectedErrorInAMP4Email)
+			}
+		})
+	}
+}
+
+func TestBaseURL(t *testing.T) {
+	docURL := "http://example.com/a/page.html"
+	tcs := []struct {
+		desc, base, expected string
+	}{
+		{
+			"no base href",
+			"<base target=_top>",
+			docURL,
+		},
+		{
+			"absolute",
+			"<base href=https://www.foo.com>",
+			"https://www.foo.com",
+		},
+		{
+			"relative",
+			"<base href=\"./child/to/a\">",
+			"http://example.com/a/child/to/a",
+		},
+		{
+			"relative to root",
+			"<base href=\"/\">",
+			"http://example.com/",
+		},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Remember the original function and reinstate after test
+			orig := runTransformers
+			defer func() { runTransformers = orig }()
+			runTransformers = func(e *transformers.Context, fs []func(*transformers.Context) error) error {
+				if e.BaseURL.String() != tc.expected {
+					t.Errorf("setBaseURL(%s)=%s, want=%s", tc.base, e.BaseURL, tc.expected)
+				}
+				return nil
+			}
+			r := rpb.Request{Html: "<html amp><head>" + tc.base + "</head></html>", DocumentUrl: docURL, Config: rpb.Request_NONE}
+			_, _, err := Process(&r)
+			if err != nil {
+				t.Fatalf("unexpected failure %v", err)
+			}
+		})
 	}
 }

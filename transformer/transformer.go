@@ -39,16 +39,18 @@ import (
 // NOTE: The string mapping is necessary as a language cross-over to
 // allow explicit transformer invocation (via the CUSTOM config).
 var transformerFunctionMap = map[string]func(*transformers.Context) error{
+	"absoluteurl":           transformers.AbsoluteURL,
 	"ampboilerplate":        transformers.AMPBoilerplate,
 	"ampruntimecss":         transformers.AMPRuntimeCSS,
 	"linktag":               transformers.LinkTag,
-	"metatag":               transformers.MetaTag,
 	"nodecleanup":           transformers.NodeCleanup,
+	"preloadimage":          transformers.PreloadImage,
 	"reorderhead":           transformers.ReorderHead,
 	"serversiderendering":   transformers.ServerSideRendering,
 	"stripjs":               transformers.StripJS,
 	"transformedidentifier": transformers.TransformedIdentifier,
-	"url":                   transformers.URL,
+	"unusedextensions":      transformers.UnusedExtensions,
+	"urlrewrite":            transformers.URLRewrite,
 }
 
 // The map of config to the list of transformers, in the order in
@@ -58,21 +60,15 @@ var configMap = map[rpb.Request_TransformersConfig][]func(*transformers.Context)
 		// NodeCleanup should be first.
 		transformers.NodeCleanup,
 		transformers.StripJS,
-		transformers.MetaTag,
-		// TODO(alin04): Reenable LinkTag once validation is done.
-		// transformers.LinkTag,
-		// end TODO
-		transformers.URL,
+		transformers.LinkTag,
+		transformers.AbsoluteURL,
 		transformers.AMPBoilerplate,
-		// TODO(alin04): Reenable SSR once validation is done.
-		// transformers.ServerSideRendering,
-		// end TODO
-		// AmpRuntimeCss must run after ServerSideRendering
-		// TODO(alin04): Reenable AMPRuntimeCSS and
-		// TransformedIdentifier once validation is done
-		// transformers.AMPRuntimeCSS,
-		// transformers.TransformedIdentifier,
-		// end TODO
+		transformers.UnusedExtensions,
+		transformers.ServerSideRendering,
+		transformers.AMPRuntimeCSS,
+		transformers.TransformedIdentifier,
+		transformers.URLRewrite,
+		transformers.PreloadImage,
 		// ReorderHead should run after all transformers that modify the
 		// <head>, as they may do so without preserving the proper order.
 		transformers.ReorderHead,
@@ -89,6 +85,7 @@ var configMap = map[rpb.Request_TransformersConfig][]func(*transformers.Context)
 // should be enforced by AMP Caches, to protect any pages that prefetch the SXG
 // from an unnecessary number of fetches.
 const maxPreloads = 20
+
 
 // Override for tests.
 var runTransformers = func(c *transformers.Context, fns []func(*transformers.Context) error) error {
@@ -121,7 +118,7 @@ var ampFormatSuffixes = map[rpb.Request_HtmlFormat]string{
 // The keys from ampFormatSuffixes.
 var ampFormats = func() []rpb.Request_HtmlFormat {
 	ret := []rpb.Request_HtmlFormat{}
-	for v, _ := range ampFormatSuffixes {
+	for v := range ampFormatSuffixes {
 		ret = append(ret, v)
 	}
 	return ret
@@ -142,6 +139,21 @@ func isAllowed(declaredFormat string, allowedFormats []rpb.Request_HtmlFormat) b
 		}
 	}
 	return false
+}
+
+// setDOM parses the input HTML and sets c.DOM to the parsed DOM struct.
+func setDOM(c *transformers.Context, s string) error {
+	doc, err := html.Parse(strings.NewReader(s))
+	if err != nil {
+		return errors.Wrap(err, "Error parsing input HTML")
+	}
+
+	dom, err := amphtml.NewDOM(doc)
+	if err != nil {
+		return err
+	}
+	c.DOM = dom
+	return nil
 }
 
 // requireAMPAttribute returns an error if the <html> tag doesn't contain an
@@ -169,13 +181,13 @@ func extractPreloads(dom *amphtml.DOM) []*rpb.Metadata_Preload {
 	for child := dom.HeadNode.FirstChild; child != nil; child = child.NextSibling {
 		switch child.DataAtom {
 		case atom.Script:
-			if src, ok := htmlnode.GetAttributeVal(child, "src"); ok {
+			if src, ok := htmlnode.GetAttributeVal(child, "", "src"); ok {
 				preloads = append(preloads, &rpb.Metadata_Preload{Url: src, As: "script"})
 			}
 		case atom.Link:
-			if rel, ok := htmlnode.GetAttributeVal(child, "rel"); ok {
-				if rel == "stylesheet" {
-					if href, ok := htmlnode.GetAttributeVal(child, "href"); ok {
+			if rel, ok := htmlnode.GetAttributeVal(child, "", "rel"); ok {
+				if strings.EqualFold(rel, "stylesheet") {
+					if href, ok := htmlnode.GetAttributeVal(child, "", "href"); ok {
 						preloads = append(preloads, &rpb.Metadata_Preload{Url: href, As: "style"})
 					}
 				}
@@ -188,6 +200,22 @@ func extractPreloads(dom *amphtml.DOM) []*rpb.Metadata_Preload {
 	return preloads
 }
 
+// setBaseURL derives the absolute base URL, and sets it on c.BaseURL. The value
+// is derived using the <base> href in the DOM, if it exists. If the href is
+// relative, it is parsed in the context of the document URL.
+// This must run after DocumentURL is set on the context.
+func setBaseURL(c *transformers.Context) {
+	if n, ok := htmlnode.FindNode(c.DOM.HeadNode, atom.Base); ok {
+		if v, ok := htmlnode.GetAttributeVal(n, "", "href"); ok {
+			if u, err := c.DocumentURL.Parse(v); err == nil {
+				c.BaseURL = u
+				return
+			}
+		}
+	}
+	c.BaseURL = c.DocumentURL
+}
+
 // Process will parse the given request, which contains the HTML to
 // transform, applying the requested list of transformers, and return the
 // transformed HTML and list of resources to preload (absolute URLs), or an
@@ -195,16 +223,17 @@ func extractPreloads(dom *amphtml.DOM) []*rpb.Metadata_Preload {
 //
 // If the requested list of transformers is empty, apply the default.
 func Process(r *rpb.Request) (string, *rpb.Metadata, error) {
-	doc, err := html.Parse(strings.NewReader(r.Html))
-	if err != nil {
-		return "", nil, errors.Wrap(err, "Error parsing input HTML")
-	}
-	dom, err := amphtml.NewDOM(doc)
-	if err != nil {
+	context := &transformers.Context{}
+
+	if err := validateUTF8ForHTML(r.Html); err != nil {
 		return "", nil, err
 	}
 
-	if err := requireAMPAttribute(dom, r.AllowedFormats); err != nil {
+	if err := setDOM(context, r.Html); err != nil {
+		return "", nil, err
+	}
+
+	if err := requireAMPAttribute(context.DOM, r.AllowedFormats); err != nil {
 		return "", nil, err
 	}
 
@@ -218,26 +247,31 @@ func Process(r *rpb.Request) (string, *rpb.Metadata, error) {
 			fns = append(fns, fn)
 		}
 	}
-	u, err := url.Parse(r.DocumentUrl)
+
+	documentURL, err := url.Parse(r.DocumentUrl)
 	if err != nil {
 		return "", nil, err
 	}
-	version := r.Version
-	if version == 0 {
-		var err error
-		version, err = SelectVersion(nil)
+	context.DocumentURL = documentURL
+
+	context.Version = r.Version
+	if r.Version == 0 {
+		version, err := SelectVersion(nil)
 		if err != nil {
 			return "", nil, err
 		}
+		context.Version = version
 	}
-	c := transformers.Context{dom, u, version, r}
-	if err := runTransformers(&c, fns); err != nil {
+
+	// This must run AFTER DocumentURL is parsed.
+	setBaseURL(context)
+
+	if err := runTransformers(context, fns); err != nil {
 		return "", nil, err
 	}
 	var o strings.Builder
-	err = printer.Print(&o, c.DOM.RootNode)
-	if err != nil {
+	if err := printer.Print(&o, context.DOM.RootNode); err != nil {
 		return "", nil, err
 	}
-	return o.String(), &rpb.Metadata{Preloads: extractPreloads(dom)}, nil
+	return o.String(), &rpb.Metadata{Preloads: extractPreloads(context.DOM)}, nil
 }

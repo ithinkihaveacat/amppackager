@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/WICG/webpackage/go/signedexchange"
-	"github.com/WICG/webpackage/go/signedexchange/version"
 )
 
 var flagSXG = flag.String("sxg", "test.sxg", "Path to signed-exchange.")
@@ -60,7 +59,7 @@ func main() {
 		exchange.SignatureHeaderValue,
 		fmt.Sprintf(`"; cert-url="https://localhost:%d/test.cert"; cert-sha256=*`, *flagPort))
 	var sxg bytes.Buffer
-	exchange.Write(&sxg, version.Version1b2)
+	exchange.Write(&sxg)
 	sxgReader := bytes.NewReader(sxg.Bytes())
 	http.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
 		if req.URL.RequestURI() != "/" {
@@ -78,7 +77,7 @@ func main() {
 		http.ServeFile(resp, req, *flagCert)
 	})
 	http.HandleFunc("/test.sxg", func(resp http.ResponseWriter, req *http.Request) {
-		resp.Header().Set("Content-Type", "application/signed-exchange;v=b2")
+		resp.Header().Set("Content-Type", "application/signed-exchange;v=b3")
 		http.ServeContent(resp, req, "test.sxg", time.Time{}, sxgReader)
 	})
 	log.Println("Serving on port", *flagPort)

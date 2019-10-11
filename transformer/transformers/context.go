@@ -21,11 +21,36 @@ import (
 	rpb "github.com/ampproject/amppackager/transformer/request"
 )
 
+// PreloadData stores the links of type script, image and style that are
+// added as Link http headers in SXG package.
+type PreloadData struct {
+	URL   *url.URL
+	As    string
+	Media string
+}
+
 // Context stores the root DOM Node and contextual data used for the
 // transformers.
 type Context struct {
-	DOM         *amphtml.DOM
+	// The DOM of the parsed HTML input.
+	DOM *amphtml.DOM
+
+	// The public URL of the document, i.e. the location that should appear in the browser URL bar.
+	// This is the URL-typed equivalent of Request.DocumentUrl.
 	DocumentURL *url.URL
-	Version     int64
-	Request     *rpb.Request
+
+	// The base URL of the document, derived from the <base> tag, if any. If the base href is
+	// relative, then it is parsed in the context of DocumentURL.
+	BaseURL *url.URL
+
+	// The version to use when transforming the DOM.
+	Version int64
+
+	// The request parameters.
+	Request *rpb.Request
+
+	// Preload data. This data gets appended in:
+	// - <link rel="preload"> head tag.
+	// - Link: HTTP Header.
+	Preloads []PreloadData
 }

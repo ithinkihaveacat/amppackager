@@ -79,15 +79,15 @@ func ApplyLayout(n *html.Node) error {
 		return nil
 	}
 
-	inputLayout := parseAMPLayout(n)
+	inputLayout := ParseAMPLayout(n)
 	dimensions, err := getNormalizedDimensions(n, inputLayout)
 	if err != nil {
 		return err
 	}
 	actualLayout, err := getNormalizedLayout(
 		inputLayout, dimensions,
-		htmlnode.GetAttributeValOrNil(n, "sizes"),
-		htmlnode.GetAttributeValOrNil(n, "heights"))
+		htmlnode.GetAttributeValOrNil(n, "", "sizes"),
+		htmlnode.GetAttributeValOrNil(n, "", "heights"))
 	if err != nil {
 		return err
 	}
@@ -97,12 +97,12 @@ func ApplyLayout(n *html.Node) error {
 
 // Parses the layout attribute value of the given node and returns the
 // corresponding AmpLayout_Layout enum.
-func parseAMPLayout(n *html.Node) amppb.AmpLayout_Layout {
-	a, ok := htmlnode.FindAttribute(n, "", "layout")
-	if !ok || a.Val == "" {
+func ParseAMPLayout(n *html.Node) amppb.AmpLayout_Layout {
+	v, ok := htmlnode.GetAttributeVal(n, "", "layout")
+	if !ok || v == "" {
 		return amppb.AmpLayout_UNKNOWN
 	}
-	key := strings.Replace(strings.ToUpper(a.Val), attributeSeparator, enumSeparator, -1)
+	key := strings.Replace(strings.ToUpper(v), attributeSeparator, enumSeparator, -1)
 	if val, ok := amppb.AmpLayout_Layout_value[key]; ok {
 		return amppb.AmpLayout_Layout(val)
 	}
@@ -185,12 +185,18 @@ func apply(n *html.Node, layout amppb.AmpLayout_Layout, dimensions cssDimensions
 			getCSSLengthStyle(dimensions.height, "height")
 	case amppb.AmpLayout_FIXED_HEIGHT:
 		styles = getCSSLengthStyle(dimensions.height, "height")
+	case amppb.AmpLayout_RESPONSIVE:
+		// Do nothing here but emit <i-amphtml-sizer> later.
+	case amppb.AmpLayout_FILL, amppb.AmpLayout_CONTAINER:
+		// Do nothing
+	}
+	// Appends the given styles so they take precedence over any
+	// user-defined styles (!important is reserved for AMP Runtime). Currently
+	// the only potential properties added are `display`, `height`, and `width`.
+	if styles != "" {
+		htmlnode.AppendAttributeWithSeparator(n, "", "style", styles, ";")
 	}
 
-	// Prepend the style in case an existing value doesn't end with ';'.
-	if styles != "" {
-		htmlnode.PrependAttribute(n, "", "style", styles)
-	}
 	if a, ok := htmlnode.FindAttribute(n, "", "style"); ok && a.Val == "" {
 		// Remove empty style attribute
 		htmlnode.RemoveAttribute(n, a)

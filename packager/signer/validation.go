@@ -33,6 +33,9 @@ func parseURL(rawURL string, name string) (*url.URL, *util.HTTPError) {
 	// Evaluate "/..", by resolving the URL as a reference from itself.
 	// This prevents malformed URLs from eluding the PathRE protections.
 	ret = ret.ResolveReference(ret)
+	// Escape special characters in the query component such as "<" or "|"
+	// (but not "&" or "=").
+	ret.RawQuery = url.PathEscape(ret.RawQuery)
 	return ret, nil
 }
 
@@ -76,6 +79,9 @@ func urlMatches(url *url.URL, pattern util.URLPattern) error {
 	if !regexpFullMatch(*pattern.QueryRE, url.RawQuery) {
 		return errors.New("QueryRE doesn't match")
 	}
+	if len(url.String()) > pattern.MaxLength {
+		return errors.New("URL too long")
+	}
 	return nil
 }
 
@@ -117,10 +123,34 @@ func fetchURLMatches(url *url.URL, pattern *util.URLPattern) error {
 	return urlMatches(url, *pattern)
 }
 
+// Determines if b is either a valid byte of a fallback URL, per
+// https://wicg.github.io/webpackage/draft-yasskin-http-origin-signed-responses.html#seccons-content-sniffing
+// item 3.1, or is the U+0025 (%) character.
+func isFallbackURLCodePoint(b byte) bool {
+	// https://url.spec.whatwg.org/#url-code-points, but in codepoint order:
+	//
+	// U+0021 (!), U+0024 ($), U+0026 (&), U+0027 ('), U+0028 LEFT PARENTHESIS,
+	// U+0029 RIGHT PARENTHESIS, U+002A (*), U+002B (+), U+002C (,), U+002D (-),
+	// U+002E (.), U+002F (/), ASCII digits (U+0030 - U+0039), U+003A (:),
+	// U+003B (;), U+003D (=), U+003F (?), U+0040 (@),
+	// ASCII upper alpha (U+0041 - U+005A), U+005F (_),
+	// ASCII lower alpha (U+0061 - U+007A), U+007E (~)
+
+	// Vaguely ordered most to least common, to aid short-circuiting:
+	return (b >= 'a' && b <= 'z') || b == '_' || b == '~' ||
+		(b >= '!' && b <= 'Z' && b != '"' /*x22*/ && b != '#' /*x23*/ && b != '<' /*x3C*/ && b != '>' /*x3E*/)
+}
+
 // True iff url matches pattern, as defined by an [URLSet.Sign] block in the
 // config file. The format of this URLPattern is validated by
 // validateSignURLPattern in config.go.
 func signURLMatches(url *url.URL, pattern *util.URLPattern) error {
+	for _, b := range []byte(url.String()) {
+		if !isFallbackURLCodePoint(b) {
+			return errors.New("Contains invalid byte")
+		}
+	}
+
 	// The sign block may not specify which schemes are allowed. Only HTTPS
 	// is allowed:
 	// https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#rfc.section.5.3
@@ -175,6 +205,8 @@ func parseURLs(fetch string, sign string, urlSets []util.URLSet) (*url.URL, *url
 		// TODO(twifkak): Use errors.Wrap() after changing return types to error.
 		return nil, nil, false, err
 	}
+
+	errs := []string{}
 	for _, set := range urlSets {
 		err := urlsMatch(fetchURL, signURL, set)
 		if err == nil {
@@ -183,8 +215,9 @@ func parseURLs(fetch string, sign string, urlSets []util.URLSet) (*url.URL, *url
 			}
 			return fetchURL, signURL, set.Sign.ErrorOnStatefulHeaders, nil
 		}
+		errs = append(errs, err.Error())
 	}
-	return nil, nil, false, util.NewHTTPError(http.StatusBadRequest, "fetch/sign URLs do not match config")
+	return nil, nil, false, util.NewHTTPError(http.StatusBadRequest, "fetch/sign URLs do not match config; caused by: ", strings.Join(errs, ", "))
 }
 
 // Given a request/response pair for the fetch from the packager to the backend
@@ -194,12 +227,22 @@ func validateFetch(req *http.Request, resp *http.Response) error {
 	// Validate response is publicly-cacheable, per
 	// https://tools.ietf.org/html/draft-yasskin-http-origin-signed-responses-03#section-6.1, as referenced by
 	// https://tools.ietf.org/html/draft-yasskin-httpbis-origin-signed-exchanges-impl-00#section-6.
+	//
+	// Note: If the cachecontrol library ever adds support for no-cache
+	// with field name arguments, then instruct the signer to remove these
+	// headers, per https://github.com/WICG/webpackage/pull/339.
 	nonCachableReasons, _, err := cachecontrol.CachableResponse(req, resp, cachecontrol.Options{PrivateCache: false})
 	if err != nil {
 		return errors.Wrap(err, "Parsing cache headers")
 	}
 	if len(nonCachableReasons) > 0 {
 		return errors.Errorf("Non-cacheable response: %s", nonCachableReasons)
+	}
+
+	// Validate that no Content-Encoding is specified. Otherwise, it was
+	// encoded as something that http.Client was unable to decode (e.g. br).
+	if encoding := resp.Header.Get("Content-Encoding"); encoding != "" {
+		return errors.Errorf("Invalid Content-Encoding: %s", encoding)
 	}
 
 	// Validate that Content-Type seems right. This doesn't validate its
