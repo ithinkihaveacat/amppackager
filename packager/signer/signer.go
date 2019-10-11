@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/x509"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -194,10 +195,12 @@ func (this *Signer) fetchURL(fetch *url.URL, serveHTTPReq *http.Request) (*http.
 			req.Header.Set(header, value)
 		}
 	}
+	fmt.Printf("qqqq: %+v\n", req)
 	resp, err := this.client.Do(req)
 	if err != nil {
 		return nil, nil, util.NewHTTPError(http.StatusBadGateway, "Error fetching: ", err)
 	}
+	log.Printf("Fetched\n")
 	util.RemoveHopByHopHeaders(resp.Header)
 	return req, resp, nil
 }
