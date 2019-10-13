@@ -199,7 +199,6 @@ func (this *Signer) fetchURL(fetch *url.URL, serveHTTPReq *http.Request) (*http.
 	if err != nil {
 		return nil, nil, util.NewHTTPError(http.StatusBadGateway, "Error fetching: ", err)
 	}
-	log.Printf("Fetched\n")
 	util.RemoveHopByHopHeaders(resp.Header)
 	return req, resp, nil
 }
