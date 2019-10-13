@@ -136,8 +136,9 @@ func main() {
 		}
 	}
 
-	signer, err := signer.New(certs[0], key, config.Docroot, config.URLSet, rtvCache, certCache.IsHealthy,
-		overrideBaseURL /*requireHeaders=*/, !*flagDevelopment, config.ForwardedRequestHeaders)
+	signer, err := signer.New(certs[0], key, config.Docroot, config.URLSet, rtvCache,
+		certCache.IsHealthy, overrideBaseURL /*requireHeaders=*/, !*flagDevelopment,
+		config.ForwardedRequestHeaders)
 	if err != nil {
 		die(errors.Wrap(err, "building signer"))
 	}

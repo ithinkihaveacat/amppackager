@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/x509"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -141,22 +140,23 @@ func noRedirects(req *http.Request, via []*http.Request) error {
 func New(cert *x509.Certificate, key crypto.PrivateKey, docroot string, urlSets []util.URLSet,
 	rtvCache *rtv.RTVCache, shouldPackage func() bool, overrideBaseURL *url.URL,
 	requireHeaders bool, forwardedRequestHeaders []string) (*Signer, error) {
-	var t http.RoundTripper
+	var rt http.RoundTripper
 	if docroot != "" {
 		t := &http.Transport{}
 		r := http.NewFileTransport(http.Dir(docroot))
 		t.RegisterProtocol("http", r)
 		t.RegisterProtocol("https", r)
 		log.Printf("AMP source is \"%s\"", docroot)
+		rt = t
 	} else {
-		t = http.DefaultTransport
+		rt = http.DefaultTransport
 		log.Printf("AMP source is network")
 	}
 	client := http.Client{
 		CheckRedirect: noRedirects,
 		// TODO(twifkak): Load-test and see if default transport settings are okay.
 		Timeout:   60 * time.Second,
-		Transport: t,
+		Transport: rt,
 	}
 
 	return &Signer{cert, key, &client, urlSets, rtvCache, shouldPackage, overrideBaseURL, requireHeaders, forwardedRequestHeaders}, nil
@@ -195,7 +195,6 @@ func (this *Signer) fetchURL(fetch *url.URL, serveHTTPReq *http.Request) (*http.
 			req.Header.Set(header, value)
 		}
 	}
-	fmt.Printf("qqqq: %+v\n", req)
 	resp, err := this.client.Do(req)
 	if err != nil {
 		return nil, nil, util.NewHTTPError(http.StatusBadGateway, "Error fetching: ", err)
