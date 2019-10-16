@@ -136,7 +136,7 @@ func main() {
 		}
 	}
 
-	signer, err := signer.New(certs[0], key, config.Docroot, config.URLSet, rtvCache,
+	signer, err := signer.New(certs[0], key, config.Public, config.URLSet, rtvCache,
 		certCache.IsHealthy, overrideBaseURL /*requireHeaders=*/, !*flagDevelopment,
 		config.ForwardedRequestHeaders)
 	if err != nil {
@@ -172,7 +172,7 @@ func main() {
 	for i := range config.URLSet {
 		d = append(d, config.URLSet[i].Sign.Domain)
 	}
-	log.Printf("Serving SXG of \"%s\" on port %d\n", strings.Join(d, ", "), config.Port)
+	log.Printf("Serving SXG for \"%s\" on port %d\n", strings.Join(d, ", "), config.Port)
 
 	// TCP keep-alive timeout on ListenAndServe is 3 minutes. To shorten,
 	// follow the above Cloudflare blog.

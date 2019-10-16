@@ -29,7 +29,7 @@ type Config struct {
 	CertFile                string // This must be the full certificate chain.
 	KeyFile                 string // Just for the first cert, obviously.
 	OCSPCache               string
-	Docroot                 string
+	Public                  string
 	ProjectId               string
 	ForwardedRequestHeaders []string
 	URLSet                  []URLSet

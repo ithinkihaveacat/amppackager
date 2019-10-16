@@ -137,16 +137,16 @@ func noRedirects(req *http.Request, via []*http.Request) error {
 	return http.ErrUseLastResponse
 }
 
-func New(cert *x509.Certificate, key crypto.PrivateKey, docroot string, urlSets []util.URLSet,
+func New(cert *x509.Certificate, key crypto.PrivateKey, public string, urlSets []util.URLSet,
 	rtvCache *rtv.RTVCache, shouldPackage func() bool, overrideBaseURL *url.URL,
 	requireHeaders bool, forwardedRequestHeaders []string) (*Signer, error) {
 	var rt http.RoundTripper
-	if docroot != "" {
+	if public != "" {
 		t := &http.Transport{}
-		r := http.NewFileTransport(http.Dir(docroot))
+		r := http.NewFileTransport(http.Dir(public))
 		t.RegisterProtocol("http", r)
 		t.RegisterProtocol("https", r)
-		log.Printf("AMP source is \"%s\"", docroot)
+		log.Printf("AMP source is \"%s\"", public)
 		rt = t
 	} else {
 		rt = http.DefaultTransport
