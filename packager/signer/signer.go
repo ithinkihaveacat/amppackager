@@ -123,13 +123,13 @@ type Signer struct {
 	// at the moment.
 	cert *x509.Certificate
 	// TODO(twifkak): Do we want to allow multiple keys?
-	key             crypto.PrivateKey
-	client          *http.Client
-	urlSets         []util.URLSet
-	rtvCache        *rtv.RTVCache
-	shouldPackage   func() bool
-	overrideBaseURL *url.URL
-	requireHeaders  bool
+	key                     crypto.PrivateKey
+	client                  *http.Client
+	urlSets                 []util.URLSet
+	rtvCache                *rtv.RTVCache
+	shouldPackage           func() bool
+	overrideBaseURL         *url.URL
+	requireHeaders          bool
 	forwardedRequestHeaders []string
 }
 
@@ -137,13 +137,26 @@ func noRedirects(req *http.Request, via []*http.Request) error {
 	return http.ErrUseLastResponse
 }
 
-func New(cert *x509.Certificate, key crypto.PrivateKey, urlSets []util.URLSet,
+func New(cert *x509.Certificate, key crypto.PrivateKey, public string, urlSets []util.URLSet,
 	rtvCache *rtv.RTVCache, shouldPackage func() bool, overrideBaseURL *url.URL,
 	requireHeaders bool, forwardedRequestHeaders []string) (*Signer, error) {
+	var rt http.RoundTripper
+	if public != "" {
+		t := &http.Transport{}
+		r := http.NewFileTransport(http.Dir(public))
+		t.RegisterProtocol("http", r)
+		t.RegisterProtocol("https", r)
+		log.Printf("AMP source is \"%s\"", public)
+		rt = t
+	} else {
+		rt = http.DefaultTransport
+		log.Printf("AMP source is network")
+	}
 	client := http.Client{
 		CheckRedirect: noRedirects,
 		// TODO(twifkak): Load-test and see if default transport settings are okay.
-		Timeout: 60 * time.Second,
+		Timeout:   60 * time.Second,
+		Transport: rt,
 	}
 
 	return &Signer{cert, key, &client, urlSets, rtvCache, shouldPackage, overrideBaseURL, requireHeaders, forwardedRequestHeaders}, nil
@@ -459,7 +472,7 @@ func (this *Signer) serveSignedExchange(resp http.ResponseWriter, fetchResp *htt
 			fetchResp.Header.Get("Content-Security-Policy")))
 
 	exchange := signedexchange.NewExchange(
-		accept.SxgVersion, /*uri=*/signURL.String(), /*method=*/"GET",
+		accept.SxgVersion /*uri=*/, signURL.String() /*method=*/, "GET",
 		http.Header{}, fetchResp.StatusCode, fetchResp.Header, []byte(transformed))
 	if err := exchange.MiEncodePayload(miRecordSize); err != nil {
 		util.NewHTTPError(http.StatusInternalServerError, "Error MI-encoding: ", err).LogAndRespond(resp)
@@ -500,7 +513,7 @@ func (this *Signer) serveSignedExchange(resp http.ResponseWriter, fetchResp *htt
 	// If requireHeaders was true when constructing signer, the
 	// AMP-Cache-Transform outer response header is required (and has already
 	// been validated)
-	if (act != "") {
+	if act != "" {
 		resp.Header().Set("AMP-Cache-Transform", act)
 	}
 

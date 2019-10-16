@@ -24,10 +24,11 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
+
 	"time"
 
 	"github.com/WICG/webpackage/go/signedexchange"
-	"github.com/pkg/errors"
 
 	"github.com/ampproject/amppackager/packager/certcache"
 	"github.com/ampproject/amppackager/packager/mux"
@@ -35,6 +36,7 @@ import (
 	"github.com/ampproject/amppackager/packager/signer"
 	"github.com/ampproject/amppackager/packager/util"
 	"github.com/ampproject/amppackager/packager/validitymap"
+	"github.com/pkg/errors"
 )
 
 var flagConfig = flag.String("config", "amppkg.toml", "Path to the config toml file.")
@@ -134,8 +136,9 @@ func main() {
 		}
 	}
 
-	signer, err := signer.New(certs[0], key, config.URLSet, rtvCache, certCache.IsHealthy,
-		overrideBaseURL, /*requireHeaders=*/!*flagDevelopment, config.ForwardedRequestHeaders)
+	signer, err := signer.New(certs[0], key, config.Public, config.URLSet, rtvCache,
+		certCache.IsHealthy, overrideBaseURL /*requireHeaders=*/, !*flagDevelopment,
+		config.ForwardedRequestHeaders)
 	if err != nil {
 		die(errors.Wrap(err, "building signer"))
 	}
@@ -165,7 +168,11 @@ func main() {
 
 	// TODO(twifkak): Add monitoring (e.g. per the above Cloudflare blog).
 
-	log.Println("Serving on port", config.Port)
+	var d []string
+	for i := range config.URLSet {
+		d = append(d, config.URLSet[i].Sign.Domain)
+	}
+	log.Printf("Serving SXG for \"%s\" on port %d\n", strings.Join(d, ", "), config.Port)
 
 	// TCP keep-alive timeout on ListenAndServe is 3 minutes. To shorten,
 	// follow the above Cloudflare blog.
