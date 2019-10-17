@@ -30,6 +30,7 @@ type Config struct {
 	KeyFile                 string // Just for the first cert, obviously.
 	OCSPCache               string
 	Public                  string
+	SXGAtRoot               bool
 	ProjectId               string
 	ForwardedRequestHeaders []string
 	URLSet                  []URLSet

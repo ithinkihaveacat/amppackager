@@ -34,6 +34,7 @@ package mux
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -45,11 +46,12 @@ type mux struct {
 	certCache   http.Handler
 	signer      http.Handler
 	validityMap http.Handler
+	sxgAtRoot   bool
 }
 
 // The main entry point. Use the return value for http.Server.Handler.
-func New(certCache http.Handler, signer http.Handler, validityMap http.Handler) http.Handler {
-	return &mux{certCache, signer, validityMap}
+func New(certCache http.Handler, signer http.Handler, validityMap http.Handler, sxgAtRoot bool) http.Handler {
+	return &mux{certCache, signer, validityMap, sxgAtRoot}
 }
 
 func tryTrimPrefix(s, prefix string) (string, bool) {
@@ -99,6 +101,11 @@ func (this *mux) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		}
 	} else if path == util.ValidityMapPath {
 		this.validityMap.ServeHTTP(resp, req)
+	} else if this.sxgAtRoot {
+		log.Println("qqqqqq")
+		log.Printf("%+v\n", req.URL.RawQuery)
+		params["signURL"] = "https://beebo.red/"
+		this.signer.ServeHTTP(resp, req)
 	} else {
 		http.NotFound(resp, req)
 	}
