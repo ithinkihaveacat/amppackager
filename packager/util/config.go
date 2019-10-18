@@ -169,7 +169,7 @@ func ReadConfig(configBytes []byte) (*Config, error) {
 	// TODO(twifkak): Return an error if the TOML includes any fields that aren't part of the Config struct.
 
 	if config.Port == 0 {
-		if i, err := strconv.ParseInt(os.Getenv("PORT"), 10, 64); err != nil {
+		if i, err := strconv.ParseInt(os.Getenv("PORT"), 10, 32); err == nil {
 			config.Port = int(i)
 		} else {
 			config.Port = 8080
