@@ -146,6 +146,7 @@ func New(cert *x509.Certificate, key crypto.PrivateKey, public string, urlSets [
 		r := http.NewFileTransport(http.Dir(public))
 		t.RegisterProtocol("http", r)
 		t.RegisterProtocol("https", r)
+		t.RegisterProtocol("file", r)
 		log.Printf("AMP source is \"%s\"", public)
 		rt = t
 	} else {

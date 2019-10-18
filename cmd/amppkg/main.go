@@ -154,7 +154,7 @@ func main() {
 		Addr: addr,
 		// Don't use DefaultServeMux, per
 		// https://blog.cloudflare.com/exposing-go-on-the-internet/.
-		Handler:           logIntercept{mux.New(certCache, signer, validityMap, config.SXGAtRoot)},
+		Handler:           logIntercept{mux.New(certCache, signer, validityMap, config.AllowRootSXG)},
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		// If needing to stream the response, disable WriteTimeout and
