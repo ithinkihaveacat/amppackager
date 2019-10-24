@@ -133,6 +133,38 @@ type Signer struct {
 	forwardedRequestHeaders []string
 }
 
+type muxRoundTripper struct {
+	http.RoundTripper
+}
+
+func (r muxRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+	if req.URL.Path == "/ping" {
+		// TODO: use go templates...
+		var data []byte
+		if data, err = ioutil.ReadFile("ping.template"); err != nil {
+			log.Fatalln("couldn't read pipe.template")
+		}
+		date := (time.Now()).Format(time.RFC3339)
+		body := strings.Replace(string(data), "{{date}}", date, -1)
+
+		header := http.Header{}
+		header.Add("content-type", "text/html")
+
+		return &http.Response{
+			Status:        "200 OK",
+			StatusCode:    200,
+			Proto:         "HTTP/1.1",
+			ProtoMajor:    1,
+			ProtoMinor:    1,
+			Body:          ioutil.NopCloser(bytes.NewBufferString(body)),
+			ContentLength: int64(len(body)),
+			Request:       req,
+			Header:        header,
+		}, nil
+	}
+	return r.RoundTripper.RoundTrip(req)
+}
+
 func noRedirects(req *http.Request, via []*http.Request) error {
 	return http.ErrUseLastResponse
 }
@@ -148,7 +180,7 @@ func New(cert *x509.Certificate, key crypto.PrivateKey, public string, urlSets [
 		t.RegisterProtocol("https", r)
 		t.RegisterProtocol("file", r)
 		log.Printf("AMP source is \"%s\"", public)
-		rt = t
+		rt = &muxRoundTripper{t}
 	} else {
 		rt = http.DefaultTransport
 		log.Printf("AMP source is network")
