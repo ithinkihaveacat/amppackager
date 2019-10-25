@@ -6,6 +6,7 @@
   <link rel="dns-prefetch" href="//cdn.ampproject.org">
   <link rel="preload" as="script" href="https://cdn.ampproject.org/v0.js">
   <script async src="https://cdn.ampproject.org/v0.js"></script>
+  <script async custom-element="amp-timeago" src="https://cdn.ampproject.org/v0/amp-timeago-0.1.js"></script>
   <title>{{date}}</title>
   <meta name="viewport" content="width=device-width,minimum-scale=1,initial-scale=1">
   <link href="https://fonts.googleapis.com/css?family=Vollkorn:400,400i,900,900i" rel="stylesheet">
@@ -837,7 +838,9 @@ amp-img.contain img {
               <h1 class="entry-title">What's the Time?</h1>
             </header>
             <div class="entry-content">
-            <p>It's {{date}}.</p>
+            <p>This page was generated server-side at {{date}} (<amp-timeago layout="fixed_height" height="0" datetime="{{date}}">{{date}}</amp-timeago>).</p>
+
+            <p><small>Load this page from the <a href="https://beebo.red/ping">origin</a>, <a href="https://beebo-red.cdn.ampproject.org/wp/s/beebo.red/ping">cache</a>.</small><p>
             </div>
 
           </article>
