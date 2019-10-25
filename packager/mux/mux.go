@@ -62,6 +62,7 @@ func tryTrimPrefix(s, prefix string) (string, bool) {
 var allowedMethods = map[string]bool{http.MethodGet: true, http.MethodHead: true}
 
 func (this *mux) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	resp.Header().Add("cache-control", "no-transform, max-age=0")
 	if !allowedMethods[req.Method] {
 		http.Error(resp, "405 method not allowed", http.StatusMethodNotAllowed)
 		return
