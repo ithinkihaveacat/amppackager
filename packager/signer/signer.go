@@ -138,14 +138,16 @@ type muxRoundTripper struct {
 }
 
 func (r muxRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
-	if req.URL.Path == "/ping" {
+	if strings.Index(req.URL.Path, "/ping") == 0 {
 		// TODO: use go templates...
 		var data []byte
 		if data, err = ioutil.ReadFile("ping.template"); err != nil {
 			log.Fatalln("couldn't read pipe.template")
 		}
 		date := (time.Now()).Format(time.RFC3339)
-		body := strings.Replace(string(data), "{{date}}", date, -1)
+		body := string(data)
+		body = strings.Replace(body, "{{date}}", date, -1)
+		body = strings.Replace(body, "{{path}}", req.URL.Path, -1)
 
 		header := http.Header{}
 		header.Add("content-type", "text/html")

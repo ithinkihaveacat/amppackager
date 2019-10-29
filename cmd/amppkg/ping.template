@@ -824,7 +824,7 @@ amp-img.contain img {
 }
 
 </style>
-  <link rel="canonical" href="https://beebo.red/ping">
+  <link rel="canonical" href="https://beebo.red{{path}}">
 </head>
 
 <body class="page-template-default page wp-embed-responsive singular image-filters-enabled">
@@ -840,7 +840,7 @@ amp-img.contain img {
             <div class="entry-content">
             <p>This page was generated server-side at {{date}} (<amp-timeago layout="fixed_height" height="0" datetime="{{date}}">{{date}}</amp-timeago>).</p>
 
-            <p><small>Load this page from the <a href="https://beebo.red/ping">origin</a>, <a href="https://beebo-red.cdn.ampproject.org/wp/s/beebo.red/ping">cache</a>.</small><p>
+            <p><small>Load this page from the <a href="https://beebo.red{{path}}">origin</a>, <a href="https://beebo-red.cdn.ampproject.org/c/s/beebo.red{{path}}">AMP cache</a>, <a href="https://beebo-red.cdn.ampproject.org/wp/s/beebo.red{{path}}">SXG cache</a>.</small><p>
             </div>
 
           </article>
