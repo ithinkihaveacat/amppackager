@@ -133,6 +133,18 @@ type Signer struct {
 	forwardedRequestHeaders []string
 }
 
+type cachingRoundTripper struct {
+	http.RoundTripper
+}
+
+func (r cachingRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+	resp, err = r.RoundTripper.RoundTrip(req)
+	if resp.StatusCode == 200 && err == nil {
+		resp.Header.Set("cache-control", "public, max-age=42")
+	}
+	return resp, err
+}
+
 type muxRoundTripper struct {
 	http.RoundTripper
 }
@@ -182,7 +194,7 @@ func New(cert *x509.Certificate, key crypto.PrivateKey, public string, urlSets [
 		t.RegisterProtocol("https", r)
 		t.RegisterProtocol("file", r)
 		log.Printf("AMP source is \"%s\"", public)
-		rt = &muxRoundTripper{t}
+		rt = &cachingRoundTripper{muxRoundTripper{t}}
 	} else {
 		rt = http.DefaultTransport
 		log.Printf("AMP source is network")
