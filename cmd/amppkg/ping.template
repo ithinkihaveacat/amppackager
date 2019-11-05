@@ -846,7 +846,7 @@ amp-img.contain img {
 
             <amp-timeago layout="responsive" width="0" height="0" datetime="{{date}}">{{date}}</amp-timeago>
 
-            <p><small>Load this page from the <a href="https://beebo.red{{path}}">origin</a>, <a href="https://beebo-red.cdn.ampproject.org/c/s/beebo.red{{path}}">AMP cache</a>, <a href="https://beebo-red.cdn.ampproject.org/wp/s/beebo.red{{path}}">SXG cache</a>.</small><p>
+            <p><small>Load this page from the <a href="https://beebo.red{{path}}">origin</a>, <a href="https://beebo-red.cdn.ampproject.org/c/s/beebo.red{{path}}">AMP cache</a> (<a href="https://beebo-red.cdn.ampproject.org/c/s/beebo.red{{path}}?deb=trace">debug</a>), <a href="https://beebo-red.cdn.ampproject.org/wp/s/beebo.red{{path}}">SXG cache</a> (<a href="https://beebo-red.cdn.ampproject.org/wp/s/beebo.red{{path}}?deb=trace">debug</a>).</small><p>
 
             <p><small>@Date: {{date}}@</small></p>
             </div>
