@@ -160,6 +160,7 @@ func (r muxRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err 
 		body := string(data)
 		body = strings.Replace(body, "{{date}}", date, -1)
 		body = strings.Replace(body, "{{path}}", req.URL.Path, -1)
+		body = strings.Replace(body, "{{epoch}}", strconv.FormatInt(time.Now().Unix() + 1, 10), -1)
 
 		header := http.Header{}
 		header.Add("content-type", "text/html")
