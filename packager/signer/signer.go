@@ -396,6 +396,13 @@ func (this *Signer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Temporarily disable packaging for /ping
+	if strings.Index(req.URL.Path, "/ping") == 0 {
+		log.Printf("Not packaging because request is for /ping*")
+		proxy(resp, fetchResp, nil)
+		return
+	}
+
 	switch fetchResp.StatusCode {
 	case 200:
 		// If fetchURL returns an OK status, then validate, munge, and package.
